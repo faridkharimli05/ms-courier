@@ -3,7 +3,6 @@ package az.delivery.mscourier.dto;
 import az.delivery.mscourier.enums.CourierStatus;
 import lombok.*;
 
-
 @Getter
 @Setter
 @ToString
@@ -16,4 +15,5 @@ public class CourierResponseDto {
     private String name;
     private String phone;
     private CourierStatus status;
+    private Long currentOrderId;
 }

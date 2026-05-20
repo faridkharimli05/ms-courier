@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-add-unique-phone-to-couriers
+      author: faridkarimli
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM (SELECT phone FROM couriers GROUP BY phone HAVING COUNT(*) > 1) duplicates"
+      changes:
+        - addUniqueConstraint:
+            tableName: couriers
+            columnNames: phone
+            constraintName: uk_couriers_phone

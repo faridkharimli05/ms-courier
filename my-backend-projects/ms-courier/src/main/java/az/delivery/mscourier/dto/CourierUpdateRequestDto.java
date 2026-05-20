@@ -11,7 +11,8 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class CourierRequestDto {
+public class CourierUpdateRequestDto {
+
     @NotBlank(message = "Name cannot be blank")
     private String name;
 
