@@ -32,73 +32,54 @@ public class RabbitMqConfig {
 
     @Bean
     public DirectExchange orderEventsExchange() {
-        return new DirectExchange(ORDER_EVENTS_EXCHANGE);
+        return exchange(ORDER_EVENTS_EXCHANGE);
     }
 
     @Bean
     public Queue orderAssignedQueue() {
-        return QueueBuilder.durable(ORDER_ASSIGNED_QUEUE)
-                .deadLetterExchange(ORDER_EVENTS_DEAD_LETTER_EXCHANGE)
-                .deadLetterRoutingKey(ORDER_ASSIGNED_DEAD_LETTER_ROUTING_KEY)
-                .build();
+        return queue(ORDER_ASSIGNED_QUEUE, ORDER_ASSIGNED_DEAD_LETTER_ROUTING_KEY);
     }
 
     @Bean
     public Queue orderDeliveredQueue() {
-        return QueueBuilder.durable(ORDER_DELIVERED_QUEUE)
-                .deadLetterExchange(ORDER_EVENTS_DEAD_LETTER_EXCHANGE)
-                .deadLetterRoutingKey(ORDER_DELIVERED_DEAD_LETTER_ROUTING_KEY)
-                .build();
+        return queue(ORDER_DELIVERED_QUEUE, ORDER_DELIVERED_DEAD_LETTER_ROUTING_KEY);
     }
 
     @Bean
     public DirectExchange orderEventsDeadLetterExchange() {
-        return ExchangeBuilder
-                .directExchange(ORDER_EVENTS_DEAD_LETTER_EXCHANGE)
-                .durable(true)
-                .build();
+        return exchange(ORDER_EVENTS_DEAD_LETTER_EXCHANGE);
     }
 
     @Bean
     public Queue orderAssignedDeadLetterQueue() {
-        return QueueBuilder.durable(ORDER_ASSIGNED_DLQ).build();
+        return queue(ORDER_ASSIGNED_DLQ);
     }
 
     @Bean
     public Queue orderDeliveredDeadLetterQueue() {
-        return QueueBuilder.durable(ORDER_DELIVERED_DLQ).build();
+        return queue(ORDER_DELIVERED_DLQ);
     }
 
     @Bean
     public Binding orderAssignedBinding() {
-        return BindingBuilder
-                .bind(orderAssignedQueue())
-                .to(orderEventsExchange())
-                .with(ORDER_ASSIGNED_ROUTING_KEY);
+        return bind(orderAssignedQueue(), orderEventsExchange(), ORDER_ASSIGNED_ROUTING_KEY);
     }
 
     @Bean
     public Binding orderDeliveredBinding() {
-        return BindingBuilder
-                .bind(orderDeliveredQueue())
-                .to(orderEventsExchange())
-                .with(ORDER_DELIVERED_ROUTING_KEY);
+        return bind(orderDeliveredQueue(), orderEventsExchange(), ORDER_DELIVERED_ROUTING_KEY);
     }
 
     @Bean
     public Binding orderAssignedDeadLetterBinding() {
-        return BindingBuilder
-                .bind(orderAssignedDeadLetterQueue())
-                .to(orderEventsDeadLetterExchange())
-                .with(ORDER_ASSIGNED_DEAD_LETTER_ROUTING_KEY);
+        return bind(orderAssignedDeadLetterQueue(), orderEventsDeadLetterExchange(),
+                ORDER_ASSIGNED_DEAD_LETTER_ROUTING_KEY);
     }
 
     @Bean
     public Binding orderDeliveredDeadLetterBinding() {
-        return BindingBuilder
-                .bind(orderDeliveredDeadLetterQueue())
-                .to(orderEventsDeadLetterExchange())
-                .with(ORDER_DELIVERED_DEAD_LETTER_ROUTING_KEY);
+        return bind(orderDeliveredDeadLetterQueue(), orderEventsDeadLetterExchange(),
+                ORDER_DELIVERED_DEAD_LETTER_ROUTING_KEY);
     }
 
     @Bean
@@ -111,10 +92,29 @@ public class RabbitMqConfig {
             SimpleRabbitListenerContainerFactoryConfigurer configurer,
             ConnectionFactory connectionFactory,
             MessageConverter messageConverter) {
-        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        var factory = new SimpleRabbitListenerContainerFactory();
         configurer.configure(factory, connectionFactory);
         factory.setMessageConverter(messageConverter);
         factory.setDefaultRequeueRejected(false);
         return factory;
+    }
+
+    private static DirectExchange exchange(String name) {
+        return ExchangeBuilder.directExchange(name).durable(true).build();
+    }
+
+    private static Queue queue(String name) {
+        return QueueBuilder.durable(name).build();
+    }
+
+    private static Queue queue(String name, String deadLetterRoutingKey) {
+        return QueueBuilder.durable(name)
+                .deadLetterExchange(ORDER_EVENTS_DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(deadLetterRoutingKey)
+                .build();
+    }
+
+    private static Binding bind(Queue queue, DirectExchange exchange, String routingKey) {
+        return BindingBuilder.bind(queue).to(exchange).with(routingKey);
     }
 }

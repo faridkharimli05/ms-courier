@@ -1,19 +1,18 @@
 package az.delivery.mscourier.dto;
 
 import az.delivery.mscourier.enums.CourierStatus;
-import lombok.*;
 
-@Getter
-@Setter
-@ToString
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class CourierResponseDto {
+import java.util.List;
 
-    private Long id;
-    private String name;
-    private String phone;
-    private CourierStatus status;
-    private Long currentOrderId;
+public record CourierResponseDto(
+        Long id,
+        String name,
+        String phone,
+        CourierStatus status,
+        Long currentOrderId,
+        List<Long> orderHistory
+) {
+    public CourierResponseDto {
+        orderHistory = List.copyOf(orderHistory);
+    }
 }

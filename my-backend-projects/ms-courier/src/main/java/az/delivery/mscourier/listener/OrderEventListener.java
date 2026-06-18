@@ -21,14 +21,14 @@ public class OrderEventListener {
     @RabbitListener(queues = RabbitMqConfig.ORDER_ASSIGNED_QUEUE)
     public void handleOrderAssigned(OrderAssignedEvent event) {
         log.info("Order assigned event received: orderId={}, courierId={}",
-                event.getOrderId(), event.getCourierId());
-        courierService.assignCourierToOrder(event.getCourierId(), event.getOrderId());
+                event.orderId(), event.courierId());
+        courierService.handleOrderAssigned(event.courierId(), event.orderId());
     }
 
     @RabbitListener(queues = RabbitMqConfig.ORDER_DELIVERED_QUEUE)
     public void handleOrderDelivered(OrderDeliveredEvent event) {
         log.info("Order delivered event received: orderId={}, courierId={}",
-                event.getOrderId(), event.getCourierId());
-        courierService.completeDelivery(event.getCourierId(), event.getOrderId());
+                event.orderId(), event.courierId());
+        courierService.handleOrderDelivered(event.courierId(), event.orderId());
     }
 }

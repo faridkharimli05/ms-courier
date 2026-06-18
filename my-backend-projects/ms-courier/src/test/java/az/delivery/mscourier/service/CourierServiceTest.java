@@ -2,7 +2,6 @@ package az.delivery.mscourier.service;
 
 import az.delivery.mscourier.dto.CourierRequestDto;
 import az.delivery.mscourier.dto.CourierResponseDto;
-import az.delivery.mscourier.dto.CourierUpdateRequestDto;
 import az.delivery.mscourier.entity.Courier;
 import az.delivery.mscourier.enums.CourierStatus;
 import az.delivery.mscourier.exception.CourierAlreadyExistsException;
@@ -34,151 +33,171 @@ class CourierServiceTest {
     @Mock
     private CourierRepository courierRepository;
 
+    @Mock
+    private CourierMapper courierMapper;
+
     private CourierService courierService;
 
     @BeforeEach
     void setUp() {
-        courierService = new CourierService(courierRepository, new CourierMapper());
+        courierService = new CourierService(courierRepository, courierMapper);
     }
 
     @Test
     void createCourierCreatesFreeCourier() {
-        CourierRequestDto request = new CourierRequestDto("Farid", "+994501112233");
-        Courier savedCourier = Courier.builder()
-                .id(1L)
-                .name(request.getName())
-                .phone(request.getPhone())
+        CourierRequestDto request = request("Farid", "+994501112233");
+        Courier courierFromMapper = Courier.builder()
+                .name(request.name())
+                .phone(request.phone())
                 .status(FREE)
                 .build();
+        Courier savedCourier = Courier.builder()
+                .id(1L)
+                .name(request.name())
+                .phone(request.phone())
+                .status(FREE)
+                .build();
+        CourierResponseDto expectedResponse = new CourierResponseDto(1L, "Farid", "+994501112233", FREE, null, List.of());
 
-        when(courierRepository.existsByPhone(request.getPhone())).thenReturn(false);
+        when(courierRepository.existsByPhone(request.phone())).thenReturn(false);
+        when(courierMapper.toCourier(request)).thenReturn(courierFromMapper);
         when(courierRepository.save(any(Courier.class))).thenReturn(savedCourier);
+        when(courierMapper.toResponseDto(savedCourier)).thenReturn(expectedResponse);
 
         CourierResponseDto response = courierService.createCourier(request);
 
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getStatus()).isEqualTo(FREE);
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.status()).isEqualTo(FREE);
+        assertThat(response.orderHistory()).isEmpty();
     }
 
     @Test
     void createCourierThrowsWhenPhoneExists() {
-        CourierRequestDto request = new CourierRequestDto("Farid", "+994501112233");
-        when(courierRepository.existsByPhone(request.getPhone())).thenReturn(true);
+        CourierRequestDto request = request("Farid", "+994501112233");
+        when(courierRepository.existsByPhone(request.phone())).thenReturn(true);
 
         assertThatThrownBy(() -> courierService.createCourier(request))
                 .isInstanceOf(CourierAlreadyExistsException.class)
-                .hasMessageContaining(request.getPhone());
+                .hasMessageContaining(request.phone());
 
         verify(courierRepository, never()).save(any(Courier.class));
     }
 
     @Test
     void getCouriersReturnsAllCouriers() {
-        when(courierRepository.findAll()).thenReturn(List.of(
-                courier(1L, "Farid", "+994501112233", FREE),
-                courier(2L, "Ali", "+994501112244", BUSY)
-        ));
+        Courier c1 = courier(1L, "Farid", "+994501112233", FREE);
+        Courier c2 = courier(2L, "Ali", "+994501112244", BUSY);
+        CourierResponseDto response1 = new CourierResponseDto(1L, "Farid", "+994501112233", FREE, null, List.of());
+        CourierResponseDto response2 = new CourierResponseDto(2L, "Ali", "+994501112244", BUSY, null, List.of());
+
+        when(courierRepository.findAll()).thenReturn(List.of(c1, c2));
+        when(courierMapper.toResponseDto(c1)).thenReturn(response1);
+        when(courierMapper.toResponseDto(c2)).thenReturn(response2);
 
         List<CourierResponseDto> response = courierService.getCouriers();
 
         assertThat(response).hasSize(2);
-        assertThat(response).extracting(CourierResponseDto::getStatus)
+        assertThat(response).extracting(CourierResponseDto::status)
                 .containsExactly(FREE, BUSY);
     }
 
     @Test
-    void assignAvailableCourierMarksCourierBusy() {
+    void getAvailableCourierReturnsFreeCourier() {
         Courier freeCourier = courier(1L, "Farid", "+994501112233", FREE);
+        CourierResponseDto expectedResponse = new CourierResponseDto(1L, "Farid", "+994501112233", FREE, null, List.of());
 
-        when(courierRepository.findFirstByStatusOrderByIdAsc(FREE))
-                .thenReturn(Optional.of(freeCourier));
-        when(courierRepository.save(freeCourier)).thenReturn(freeCourier);
+        when(courierRepository.findFirstByStatus(FREE)).thenReturn(Optional.of(freeCourier));
+        when(courierMapper.toResponseDto(freeCourier)).thenReturn(expectedResponse);
 
-        CourierResponseDto response = courierService.assignAvailableCourier(10L);
+        CourierResponseDto response = courierService.getAvailableCourier();
 
-        assertThat(response.getStatus()).isEqualTo(BUSY);
-        assertThat(response.getCurrentOrderId()).isEqualTo(10L);
-        assertThat(freeCourier.getStatus()).isEqualTo(BUSY);
-        assertThat(freeCourier.getCurrentOrderId()).isEqualTo(10L);
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.status()).isEqualTo(FREE);
     }
 
     @Test
-    void assignAvailableCourierThrowsWhenNoFreeCourierExists() {
-        when(courierRepository.findFirstByStatusOrderByIdAsc(FREE))
-                .thenReturn(Optional.empty());
+    void getAvailableCourierThrowsWhenNoFreeCourierExists() {
+        when(courierRepository.findFirstByStatus(FREE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> courierService.assignAvailableCourier(10L))
+        assertThatThrownBy(() -> courierService.getAvailableCourier())
                 .isInstanceOf(CourierNotFoundException.class);
     }
 
     @Test
-    void assignCourierToOrderStoresCurrentOrder() {
+    void handleOrderAssignedMarksCourierBusy() {
         Courier freeCourier = courier(1L, "Farid", "+994501112233", FREE);
         when(courierRepository.findById(1L)).thenReturn(Optional.of(freeCourier));
         when(courierRepository.save(freeCourier)).thenReturn(freeCourier);
 
-        CourierResponseDto response = courierService.assignCourierToOrder(1L, 10L);
+        courierService.handleOrderAssigned(1L, 10L);
 
-        assertThat(response.getStatus()).isEqualTo(BUSY);
-        assertThat(response.getCurrentOrderId()).isEqualTo(10L);
+        assertThat(freeCourier.getStatus()).isEqualTo(BUSY);
+        assertThat(freeCourier.getCurrentOrderId()).isEqualTo(10L);
+        assertThat(freeCourier.getOrderHistory()).containsExactly(10L);
+        verify(courierRepository).save(freeCourier);
     }
 
     @Test
-    void assignCourierToOrderThrowsWhenBusyWithAnotherOrder() {
+    void handleOrderAssignedDoesNotDuplicateHistoryForSameOrder() {
+        Courier busyCourier = courier(1L, "Farid", "+994501112233", BUSY);
+        busyCourier.setCurrentOrderId(10L);
+        busyCourier.getOrderHistory().add(10L);
+        when(courierRepository.findById(1L)).thenReturn(Optional.of(busyCourier));
+        when(courierRepository.save(busyCourier)).thenReturn(busyCourier);
+
+        courierService.handleOrderAssigned(1L, 10L);
+
+        assertThat(busyCourier.getOrderHistory()).containsExactly(10L);
+    }
+
+    @Test
+    void handleOrderAssignedThrowsWhenBusyWithAnotherOrder() {
         Courier busyCourier = courier(1L, "Farid", "+994501112233", BUSY);
         busyCourier.setCurrentOrderId(9L);
+        busyCourier.getOrderHistory().add(9L);
         when(courierRepository.findById(1L)).thenReturn(Optional.of(busyCourier));
 
-        assertThatThrownBy(() -> courierService.assignCourierToOrder(1L, 10L))
+        assertThatThrownBy(() -> courierService.handleOrderAssigned(1L, 10L))
                 .isInstanceOf(CourierAssignmentException.class);
 
         verify(courierRepository, never()).save(any(Courier.class));
     }
 
     @Test
-    void markFreeChangesBusyCourierToFree() {
+    void handleOrderDeliveredClearsCurrentOrderAndFreesCourier() {
         Courier courier = courier(1L, "Farid", "+994501112233", BUSY);
         courier.setCurrentOrderId(10L);
+        courier.getOrderHistory().add(10L);
         when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
+        when(courierRepository.save(courier)).thenReturn(courier);
 
-        courierService.markFree(1L);
+        courierService.handleOrderDelivered(1L, 10L);
 
         assertThat(courier.getStatus()).isEqualTo(FREE);
         assertThat(courier.getCurrentOrderId()).isNull();
+        assertThat(courier.getOrderHistory()).containsExactly(10L);
         verify(courierRepository).save(courier);
     }
 
     @Test
-    void completeDeliveryClearsCurrentOrderAndFreesCourier() {
+    void handleOrderDeliveredThrowsWhenOrderDoesNotMatch() {
         Courier courier = courier(1L, "Farid", "+994501112233", BUSY);
         courier.setCurrentOrderId(10L);
+        courier.getOrderHistory().add(10L);
         when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
 
-        courierService.completeDelivery(1L, 10L);
-
-        assertThat(courier.getStatus()).isEqualTo(FREE);
-        assertThat(courier.getCurrentOrderId()).isNull();
-        verify(courierRepository).save(courier);
-    }
-
-    @Test
-    void completeDeliveryThrowsWhenOrderDoesNotMatch() {
-        Courier courier = courier(1L, "Farid", "+994501112233", BUSY);
-        courier.setCurrentOrderId(10L);
-        when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
-
-        assertThatThrownBy(() -> courierService.completeDelivery(1L, 11L))
+        assertThatThrownBy(() -> courierService.handleOrderDelivered(1L, 11L))
                 .isInstanceOf(CourierAssignmentException.class);
 
         verify(courierRepository, never()).save(any(Courier.class));
     }
 
     @Test
-    void completeDeliveryThrowsWhenCourierHasNoCurrentOrder() {
+    void handleOrderDeliveredThrowsWhenCourierHasNoCurrentOrder() {
         Courier courier = courier(1L, "Farid", "+994501112233", FREE);
         when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
 
-        assertThatThrownBy(() -> courierService.completeDelivery(1L, 10L))
+        assertThatThrownBy(() -> courierService.handleOrderDelivered(1L, 10L))
                 .isInstanceOf(CourierAssignmentException.class);
 
         verify(courierRepository, never()).save(any(Courier.class));
@@ -187,15 +206,20 @@ class CourierServiceTest {
     @Test
     void updateCourierChangesNameAndPhone() {
         Courier courier = courier(1L, "Farid", "+994501112233", FREE);
-        CourierUpdateRequestDto request = new CourierUpdateRequestDto("Ali", "+994501112244");
+        Courier updatedCourier = courier(1L, "Ali", "+994501112244", FREE);
+        CourierRequestDto request = request("Ali", "+994501112244");
+        CourierResponseDto expectedResponse = new CourierResponseDto(1L, "Ali", "+994501112244", FREE, null, List.of());
+
         when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
-        when(courierRepository.existsByPhoneAndIdNot(request.getPhone(), 1L)).thenReturn(false);
-        when(courierRepository.save(courier)).thenReturn(courier);
+        when(courierRepository.existsByPhoneAndIdNot(request.phone(), 1L)).thenReturn(false);
+        when(courierMapper.updateCourierFromRequest(courier, request)).thenReturn(updatedCourier);
+        when(courierRepository.save(updatedCourier)).thenReturn(updatedCourier);
+        when(courierMapper.toResponseDto(updatedCourier)).thenReturn(expectedResponse);
 
         CourierResponseDto response = courierService.updateCourier(1L, request);
 
-        assertThat(response.getName()).isEqualTo("Ali");
-        assertThat(response.getPhone()).isEqualTo("+994501112244");
+        assertThat(response.name()).isEqualTo("Ali");
+        assertThat(response.phone()).isEqualTo("+994501112244");
     }
 
     @Test
@@ -217,6 +241,17 @@ class CourierServiceTest {
         verify(courierRepository).delete(courier);
     }
 
+    @Test
+    void getCourierOrderHistoryReturnsRecordedOrders() {
+        Courier courier = courier(1L, "Farid", "+994501112233", FREE);
+        courier.getOrderHistory().addAll(List.of(10L, 15L, 18L));
+        when(courierRepository.findById(1L)).thenReturn(Optional.of(courier));
+
+        List<Long> response = courierService.getCourierOrderHistory(1L);
+
+        assertThat(response).containsExactly(10L, 15L, 18L);
+    }
+
     private Courier courier(Long id, String name, String phone, CourierStatus status) {
         return Courier.builder()
                 .id(id)
@@ -224,5 +259,9 @@ class CourierServiceTest {
                 .phone(phone)
                 .status(status)
                 .build();
+    }
+
+    private CourierRequestDto request(String name, String phone) {
+        return new CourierRequestDto(name, phone);
     }
 }

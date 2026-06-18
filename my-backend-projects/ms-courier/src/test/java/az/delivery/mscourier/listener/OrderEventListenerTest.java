@@ -17,13 +17,13 @@ class OrderEventListenerTest {
     void handleOrderAssignedMarksCourierBusy() {
         listener.handleOrderAssigned(new OrderAssignedEvent(10L, 1L));
 
-        verify(courierService).assignCourierToOrder(1L, 10L);
+        verify(courierService).handleOrderAssigned(1L, 10L);
     }
 
     @Test
     void handleOrderDeliveredMarksCourierFree() {
         listener.handleOrderDelivered(new OrderDeliveredEvent(10L, 1L));
 
-        verify(courierService).completeDelivery(1L, 10L);
+        verify(courierService).handleOrderDelivered(1L, 10L);
     }
 }

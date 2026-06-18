@@ -10,10 +10,9 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI courierOpenApi() {
-        return new OpenAPI()
-                .info(new Info()
-                        .title("Courier Service API")
-                        .version("v1")
-                        .description("Courier management, availability, and order event listeners"));
+        return new OpenAPI().info(new Info()
+                .title("Courier Service API")
+                .version("v1")
+                .description("Courier management, availability, and order event listeners"));
     }
 }

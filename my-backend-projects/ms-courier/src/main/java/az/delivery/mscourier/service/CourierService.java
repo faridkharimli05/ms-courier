@@ -2,7 +2,6 @@ package az.delivery.mscourier.service;
 
 import az.delivery.mscourier.dto.CourierRequestDto;
 import az.delivery.mscourier.dto.CourierResponseDto;
-import az.delivery.mscourier.dto.CourierUpdateRequestDto;
 import az.delivery.mscourier.entity.Courier;
 import az.delivery.mscourier.enums.CourierStatus;
 import az.delivery.mscourier.exception.CourierAlreadyExistsException;
@@ -15,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 import static az.delivery.mscourier.enums.CourierStatus.BUSY;
 import static az.delivery.mscourier.enums.CourierStatus.FREE;
@@ -28,121 +28,116 @@ public class CourierService {
 
     @Transactional
     public CourierResponseDto createCourier(CourierRequestDto request) {
-        validatePhoneIsUnique(request.getPhone());
-        Courier courier = courierMapper.toEntity(request);
-        Courier savedCourier = save(courier);
-        return toResponse(savedCourier);
+        validatePhone(request.phone(), null);
+
+        Courier courier = courierMapper.toCourier(request);
+        Courier saved = courierRepository.save(courier);
+
+        return courierMapper.toResponseDto(saved);
     }
 
-    @Transactional(readOnly = true)
-    public CourierResponseDto getAvailableCourier() {
-        Courier courier = findAvailableCourier();
-        return toResponse(courier);
-    }
-
-    @Transactional(readOnly = true)
     public List<CourierResponseDto> getCouriers() {
         return courierRepository.findAll()
                 .stream()
-                .map(this::toResponse)
+                .map(courierMapper::toResponseDto)
                 .toList();
     }
 
-    @Transactional
-    public CourierResponseDto assignAvailableCourier(Long orderId) {
-        validateOrderId(orderId);
-        Courier courier = findFirstAvailableCourierForAssignment();
-        courier.setStatus(BUSY);
-        courier.setCurrentOrderId(orderId);
-        Courier assignedCourier = save(courier);
-        return toResponse(assignedCourier);
+    public CourierResponseDto getAvailableCourier() {
+        Courier courier = courierRepository.findFirstByStatus(FREE)
+                .orElseThrow(() ->
+                        new CourierNotFoundException("No available courier found"));
+
+        return courierMapper.toResponseDto(courier);
     }
 
-    @Transactional
-    public CourierResponseDto assignCourierToOrder(Long courierId, Long orderId) {
-        validateOrderId(orderId);
-        Courier courier = findById(courierId);
-        if (courier.getStatus() == BUSY && !orderId.equals(courier.getCurrentOrderId())) {
-            throw new CourierAssignmentException(
-                    "Courier is already assigned to another order: " + courier.getCurrentOrderId());
-        }
-        courier.setStatus(BUSY);
-        courier.setCurrentOrderId(orderId);
-        return toResponse(save(courier));
-    }
-
-    @Transactional
-    public void markBusy(Long courierId) {
-        updateStatus(courierId, BUSY);
-    }
-
-    @Transactional
-    public void markFree(Long courierId) {
-        updateStatus(courierId, FREE);
-    }
-
-    @Transactional
-    public void completeDelivery(Long courierId, Long orderId) {
-        validateOrderId(orderId);
-        Courier courier = findById(courierId);
-        if (courier.getCurrentOrderId() == null) {
-            throw new CourierAssignmentException("Courier is not assigned to any order");
-        }
-        if (!courier.getCurrentOrderId().equals(orderId)) {
-            throw new CourierAssignmentException(
-                    "Courier is assigned to order " + courier.getCurrentOrderId()
-                            + ", not order " + orderId);
-        }
-        courier.setStatus(FREE);
-        courier.setCurrentOrderId(null);
-        save(courier);
-    }
-
-    @Transactional(readOnly = true)
     public CourierResponseDto getCourierById(Long id) {
-        Courier courier = findById(id);
-        return toResponse(courier);
+        return courierMapper.toResponseDto(findCourier(id));
+    }
+
+    public List<Long> getCourierOrderHistory(Long courierId) {
+        return List.copyOf(findCourier(courierId).getOrderHistory());
     }
 
     @Transactional
-    public CourierResponseDto updateCourier(Long id, CourierUpdateRequestDto request) {
-        Courier courier = findById(id);
-        validatePhoneIsUniqueForCourier(request.getPhone(), id);
-        courier.setName(request.getName());
-        courier.setPhone(request.getPhone());
-        return toResponse(save(courier));
+    public CourierResponseDto updateCourier(Long id, CourierRequestDto request) {
+        Courier courier = findCourier(id);
+
+        validatePhone(request.phone(), id);
+
+        Courier updated = courierMapper.updateCourierFromRequest(courier, request);
+        Courier saved = courierRepository.save(updated);
+
+        return courierMapper.toResponseDto(saved);
     }
 
     @Transactional
     public void deleteCourier(Long id) {
-        Courier courier = findById(id);
+        Courier courier = findCourier(id);
+
         if (courier.getStatus() == BUSY) {
             throw new CourierAssignmentException("Busy courier cannot be deleted");
         }
+
         courierRepository.delete(courier);
     }
 
-    private void updateStatus(Long courierId, CourierStatus status) {
-        Courier courier = findById(courierId);
-        if (courier.getStatus() == status) {
-            return;
+    @Transactional
+    public void handleOrderAssigned(Long courierId, Long orderId) {
+        validateOrderId(orderId);
+
+        Courier courier = findCourier(courierId);
+
+        if (courier.getStatus() == BUSY &&
+                !Objects.equals(courier.getCurrentOrderId(), orderId)) {
+            throw new CourierAssignmentException(
+                    "Courier is already assigned to another order: " + courier.getCurrentOrderId());
         }
-        courier.setStatus(status);
-        if (status == FREE) {
-            courier.setCurrentOrderId(null);
-        }
-        save(courier);
+
+        courier.setStatus(BUSY);
+        courier.setCurrentOrderId(orderId);
+
+        addToOrderHistory(courier, orderId);
+
+        courierRepository.save(courier);
     }
 
-    private void validatePhoneIsUnique(String phone) {
-        if (courierRepository.existsByPhone(phone)) {
-            throw new CourierAlreadyExistsException(
-                    "Courier already exists with phone: " + phone);
+    @Transactional
+    public void handleOrderDelivered(Long courierId, Long orderId) {
+        validateOrderId(orderId);
+
+        Courier courier = findCourier(courierId);
+
+        if (courier.getCurrentOrderId() == null) {
+            throw new CourierAssignmentException("Courier is not assigned to any order");
+        }
+
+        if (!Objects.equals(courier.getCurrentOrderId(), orderId)) {
+            throw new CourierAssignmentException(
+                    "Courier is assigned to order " + courier.getCurrentOrderId()
+                            + ", not order " + orderId);
+        }
+
+        addToOrderHistory(courier, orderId);
+
+        courier.setStatus(FREE);
+        courier.setCurrentOrderId(null);
+
+        courierRepository.save(courier);
+    }
+
+    private void addToOrderHistory(Courier courier, Long orderId) {
+        if (!courier.getOrderHistory().contains(orderId)) {
+            courier.getOrderHistory().add(orderId);
         }
     }
 
-    private void validatePhoneIsUniqueForCourier(String phone, Long courierId) {
-        if (courierRepository.existsByPhoneAndIdNot(phone, courierId)) {
+    private void validatePhone(String phone, Long courierId) {
+        boolean exists = courierId == null
+                ? courierRepository.existsByPhone(phone)
+                : courierRepository.existsByPhoneAndIdNot(phone, courierId);
+
+        if (exists) {
             throw new CourierAlreadyExistsException(
                     "Courier already exists with phone: " + phone);
         }
@@ -154,32 +149,10 @@ public class CourierService {
         }
     }
 
-    private Courier findAvailableCourier() {
-        return courierRepository
-                .findFirstByStatus(FREE)
-                .orElseThrow(() -> new CourierNotFoundException(
-                        "No available courier found"));
-    }
-
-    private Courier findFirstAvailableCourierForAssignment() {
-        return courierRepository
-                .findFirstByStatusOrderByIdAsc(FREE)
-                .orElseThrow(() -> new CourierNotFoundException(
-                        "No available courier found"));
-    }
-
-    private Courier findById(Long courierId) {
+    private Courier findCourier(Long courierId) {
         return courierRepository.findById(courierId)
-                .orElseThrow(() -> new CourierNotFoundException(
-                        "Courier not found with id: " + courierId));
+                .orElseThrow(() ->
+                        new CourierNotFoundException(
+                                "Courier not found with id: " + courierId));
     }
-
-    private Courier save(Courier courier) {
-        return courierRepository.save(courier);
-    }
-
-    private CourierResponseDto toResponse(Courier courier) {
-        return courierMapper.toResponseDto(courier);
-    }
-
 }
