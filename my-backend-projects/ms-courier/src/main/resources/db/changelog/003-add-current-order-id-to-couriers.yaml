@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-current-order-id-to-couriers
+      author: faridkarimli
+      changes:
+        - addColumn:
+            tableName: couriers
+            columns:
+              - column:
+                  name: current_order_id
+                  type: BIGINT

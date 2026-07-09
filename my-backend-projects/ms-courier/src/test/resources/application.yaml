@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:courier_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+  liquibase:
+    change-log: classpath:db/db.changelog-master.yaml
+
+courier:
+  rabbitmq:
+    enabled: false

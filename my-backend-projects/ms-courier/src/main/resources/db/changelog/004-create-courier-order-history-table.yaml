@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-courier-order-history-table
+      author: faridkarimli
+      changes:
+        - createTable:
+            tableName: courier_order_history
+            columns:
+              - column:
+                  name: courier_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: history_index
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: courier_order_history
+            columnNames: courier_id, history_index
+            constraintName: pk_courier_order_history
+        - addForeignKeyConstraint:
+            baseTableName: courier_order_history
+            baseColumnNames: courier_id
+            referencedTableName: couriers
+            referencedColumnNames: id
+            constraintName: fk_courier_order_history_courier
+            onDelete: CASCADE
